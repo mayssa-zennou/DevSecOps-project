@@ -1,0 +1,16 @@
+services:
+  orders-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: mayssa
+      POSTGRES_PASSWORD: orders
+    ports:
+      - "5432:5432" 
+
+
+# docker compose up
+# docker compose down -v
+# docker compose exec orders-db psql -U mayssa -d orders -c "\dt" (mayssa:role/user, orders:database)
+# docker compose exec orders-db psql -U mayssa -d orders -c "SELECT version, description, success FROM flyway_schema_history;" (flyway log)
+    
