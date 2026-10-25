@@ -8,6 +8,14 @@ services:
     ports:
       - "5432:5432" 
 
+  inventory-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: inventory
+      POSTGRES_USER: mayssa
+      POSTGRES_PASSWORD: inventory
+    ports:
+      - "5433:5432"
 
 # docker compose up
 # docker compose down -v
