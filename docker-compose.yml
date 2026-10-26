@@ -17,8 +17,4 @@ services:
     ports:
       - "5433:5432"
 
-# docker compose up
-# docker compose down -v
-# docker compose exec orders-db psql -U mayssa -d orders -c "\dt" (mayssa:role/user, orders:database)
-# docker compose exec orders-db psql -U mayssa -d orders -c "SELECT version, description, success FROM flyway_schema_history;" (flyway log)
     
