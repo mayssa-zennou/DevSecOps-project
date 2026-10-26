@@ -1,0 +1,1 @@
+INSERT INTO stock (product_id, available) VALUES ('SKU-42', 100);
