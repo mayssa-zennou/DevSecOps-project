@@ -16,9 +16,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import com.jayway.jsonpath.JsonPath;
 
 @SpringBootTest 
 @AutoConfigureMockMvc 
@@ -36,27 +39,31 @@ class OrderApiIntegrationTest {
     OrderRepository repository;
 
     // arrange / act / assert tests
-    @Test 
+    @Test
     void placeOrder_returns201_andPersistsPendingOrder() throws Exception {
         
         // request
-        mvc.perform(post("/orders")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"productId": "SKU-42", "quantity": 3}
-                                """))
-
+        MvcResult result = mvc.perform(post("/orders")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content("""
+            {"productId": "SKU-42", "quantity": 3}
+        """))
+        
         // response check
-                .andExpect(status().isCreated())  // code 201
+                .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").isNotEmpty())
                 .andExpect(jsonPath("$.productId").value("SKU-42"))
                 .andExpect(jsonPath("$.quantity").value(3))
-                .andExpect(jsonPath("$.status").value("PENDING"));
-
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andReturn();
+                
         // db check
-        assertThat(repository.findAll())
-                .anyMatch(o -> o.getProductId().equals("SKU-42")
-                        && o.getStatus() == OrderStatus.PENDING);
+        String id = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
+        Order persisted = repository.findById(UUID.fromString(id)).orElseThrow();
+
+        assertThat(persisted.getProductId()).isEqualTo("SKU-42");
+        assertThat(persisted.getQuantity()).isEqualTo(3);
+        assertThat(persisted.getStatus()).isEqualTo(OrderStatus.PENDING);
     }
 
     @Test 
@@ -94,8 +101,8 @@ class OrderApiIntegrationTest {
         mvc.perform(get("/orders/" + saved.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(saved.getId().toString()))
-                .andExpect(jsonPath("$.productId").value(saved.getProductId()))
-                .andExpect(jsonPath("$.quantity").value(saved.getQuantity()));
+                .andExpect(jsonPath("$.productId").value("SKU-7"))
+                .andExpect(jsonPath("$.quantity").value(2));
     }
 
     @Test 
