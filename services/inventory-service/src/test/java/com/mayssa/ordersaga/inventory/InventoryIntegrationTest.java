@@ -6,6 +6,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -18,7 +26,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@SpringBootTest
+@SpringBootTest(properties = "spring.datasource.hikari.maximum-pool-size=50")
 @AutoConfigureMockMvc
 @Testcontainers
 class InventoryIntegrationTest {
@@ -32,6 +40,9 @@ class InventoryIntegrationTest {
 
     @Autowired
     StockRepository repository;
+
+    @Autowired
+    InventoryService service;
 
     @Test
     void getStock_returnsAvailableQuantity() throws Exception {
@@ -96,6 +107,43 @@ class InventoryIntegrationTest {
 
         assertThat(repository.findById("SKU-D").orElseThrow().getAvailable())
                 .isEqualTo(10);
+    }
+
+    @Test
+    void concurrentReservations_neverOversell() throws Exception {
+        repository.save(new Stock("SKU-RACE", 10));
+        int threads = 50;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+
+        try {
+            CountDownLatch startSignal = new CountDownLatch(1);
+
+            List<Future<ReservationResult>> futures = new ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                futures.add(pool.submit(() -> {
+                    startSignal.await();                 // everyone waits here...
+                    return service.reserve("SKU-RACE", 1);
+                }));
+            }
+            startSignal.countDown();                     // ...and is released at the same instant
+
+            long reserved = 0;
+            long rejected = 0;
+            for (Future<ReservationResult> future : futures) {
+                ReservationResult result = future.get(10, TimeUnit.SECONDS);
+                if (result == ReservationResult.RESERVED) {
+                    reserved++;
+                } else if (result == ReservationResult.INSUFFICIENT_STOCK) {
+                    rejected++;
+                }
+            }
+
+            assertThat(reserved).isEqualTo(10);
+            assertThat(rejected).isEqualTo(40);
+            assertThat(repository.findById("SKU-RACE").orElseThrow().getAvailable()).isZero();
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     private ResultActions reserve(String productId, int quantity) throws Exception {
