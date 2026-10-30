@@ -19,7 +19,7 @@ public class NotificationService {
     private final JavaMailSender mailSender;
 
     public void handleOrderCreated(OrderCreatedEvent event){
-        if(notificationRepository.existByEventId(event.eventId())){
+        if(notificationRepository.existsByEventId(event.eventId())){
             log.info("Événement {} déjà traité, ignoré", event.eventId());
             return;
         }
@@ -30,11 +30,11 @@ public class NotificationService {
     }
 
     public void handleStockLow(StockLowEvent event){
-        if (notificationRepository.existByEventId(event.eventId())){
+        if (notificationRepository.existsByEventId(event.eventId())){
             log.info("Événement {} déjà traité, ignoré", event.eventId());
             return;
         }
-        String message="Stock bas : " + e.productName() + " (reste " + e.remaining() + ")";
+        String message="Stock bas : " + event.productName() + " (reste " + event.remaining() + ")";
         save(event.eventId(),"admin","STOCK_LOW",message);
         log.info("Notification STOCK_LOW enregistrée");
     }

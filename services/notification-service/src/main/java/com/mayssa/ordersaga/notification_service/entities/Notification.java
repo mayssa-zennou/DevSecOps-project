@@ -4,10 +4,12 @@ package com.mayssa.ordersaga.notification_service.entities;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.Instant;
 
+@NoArgsConstructor
 @Getter
 @Setter
 @AllArgsConstructor
