@@ -1,5 +1,6 @@
 package com.mayssa.ordersaga.order;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,15 +34,23 @@ public class OrderController {
         }   
     }
     private final OrderRepository repository;
+    private final OrderEventPublisher publisher;
 
-    public OrderController(OrderRepository repository) {
+    public OrderController(OrderRepository repository,OrderEventPublisher publisher) {
         this.repository = repository;
+        this.publisher=publisher;
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public OrderResponse placeOrder(@Valid @RequestBody CreateOrderRequest request) {
         Order order = repository.save(new Order(request.productId(), request.quantity()));
+        publisher.publishOrderCreated(new OrderCreatedEvent(
+                UUID.randomUUID().toString(),
+                order.getId().toString(),
+                "alice",               // provisoire
+                "alice@test.com",      // provisoire
+                Instant.now()));
         return OrderResponse.from(order);
     }
 
