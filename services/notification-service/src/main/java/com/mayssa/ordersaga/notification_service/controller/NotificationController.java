@@ -22,6 +22,6 @@ public class NotificationController {
 
     @GetMapping("/user/{userId}")
     public List<Notification> byUser(@PathVariable String userId){
-        return notificationRepo.findById(userId);
+        return notificationRepo.findByUserId(userId);
     }
 }
