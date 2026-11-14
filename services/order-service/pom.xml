@@ -50,6 +50,7 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-kafka</artifactId>
         </dependency>
+
 		
 		<!-- Flyway ≥ 10 exige ce module pour parler à PostgreSQL (version gérée par Spring Boot) -->
 		<dependency>

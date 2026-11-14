@@ -6,7 +6,12 @@ services:
       POSTGRES_USER: mayssa
       POSTGRES_PASSWORD: orders
     ports:
-      - "5432:5432" 
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mayssa -d orders"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   inventory-db:
     image: postgres:16-alpine
@@ -15,7 +20,87 @@ services:
       POSTGRES_USER: mayssa
       POSTGRES_PASSWORD: inventory
     ports:
-      - "5433:5432"
+      - "5433:5432"   # host 5433 -> container 5432 (5432 is already taken by orders-db)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mayssa -d inventory"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  notification-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: notification
+      POSTGRES_USER: nazha
+      POSTGRES_PASSWORD: notification
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nazha -d notification"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  order-service:
+    build: ./services/order-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://orders-db:5432/orders
+      SPRING_DATASOURCE_USERNAME: mayssa
+      SPRING_DATASOURCE_PASSWORD: orders
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on:
+      orders-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+
+  inventory-service:
+    build: ./services/inventory-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://inventory-db:5432/inventory
+      SPRING_DATASOURCE_USERNAME: mayssa
+      SPRING_DATASOURCE_PASSWORD: inventory
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+
+  notification-service:
+    build: ./services/notification-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notification
+      SPRING_DATASOURCE_USERNAME: nazha
+      SPRING_DATASOURCE_PASSWORD: notification
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SPRING_MAIL_HOST: mailpit
+    depends_on:
+      notification-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      mailpit:
+        condition: service_started
+
+  api-gateway:
+    build: ./services/api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      ORDER_SERVICE_URL: http://order-service:8081
+      INVENTORY_SERVICE_URL: http://inventory-service:8082
+      NOTIFICATION_SERVICE_URL: http://notification-service:8083
+    depends_on:
+      inventory-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
 
 
   kafka:
@@ -35,18 +120,18 @@ services:
           -t ${CLUSTER_ID} \
           -c /opt/kafka/config/server.properties \
           --add-scram "SCRAM-SHA-512=[name=admin,password=${KAFKA_ADMIN_PASSWORD}]" \
-        && exec /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties\
+        && exec /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties \
           --override ssl.keystore.password=${KAFKA_SSL_PASSWORD} \
           --override ssl.key.password=${KAFKA_SSL_PASSWORD} \
-          --override ssl.truststore.password=${KAFKA_SSL_PASSWORD}\
+          --override ssl.truststore.password=${KAFKA_SSL_PASSWORD} \
           --override "listener.name.external.scram-sha-512.sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=\"admin\" password=\"${KAFKA_ADMIN_PASSWORD}\";"
 
   mailpit:
-      image: axllent/mailpit
-      container_name: mailpit
-      ports:
-        - "1025:1025"   # SMTP : Notification envoie ici
-        - "8025:8025"   # interface web : vous lisez les emails ici
+    image: axllent/mailpit
+    container_name: mailpit
+    ports:
+      - "1025:1025"   # SMTP : Notification envoie ici
+      - "8025:8025"   # interface web : vous lisez les emails ici
 
 volumes:
   kafka-data:
