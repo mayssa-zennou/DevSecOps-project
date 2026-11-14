@@ -85,6 +85,22 @@ services:
         condition: service_started
       mailpit:
         condition: service_started
+
+  api-gateway:
+    build: ./services/api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      ORDER_SERVICE_URL: http://order-service:8081
+      INVENTORY_SERVICE_URL: http://inventory-service:8082
+      NOTIFICATION_SERVICE_URL: http://notification-service:8083
+    depends_on:
+      inventory-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
       
 
   kafka:
