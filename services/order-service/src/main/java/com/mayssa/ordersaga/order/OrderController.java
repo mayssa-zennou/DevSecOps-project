@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.mayssa.ordersaga.order.events.OrderCreatedEvent;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -48,8 +50,10 @@ public class OrderController {
         publisher.publishOrderCreated(new OrderCreatedEvent(
                 UUID.randomUUID().toString(),
                 order.getId().toString(),
-                "alice",               // provisoire
-                "alice@test.com",      // provisoire
+                order.getUserId(),
+                order.getUserEmail(),
+                order.getProductId(), 
+                order.getQuantity(),
                 Instant.now()));
         return OrderResponse.from(order);
     }

@@ -4,6 +4,8 @@ import tools.jackson.databind.ObjectMapper;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
+import com.mayssa.ordersaga.order.events.OrderCreatedEvent;
+
 @Component
 public class OrderEventPublisher {
 
@@ -22,7 +24,7 @@ public class OrderEventPublisher {
             String json = mapper.writeValueAsString(event);
             kafkaTemplate.send(TOPIC, event.eventId(), json);
         } catch (Exception e) {
-            throw new RuntimeException("Impossible de publier l'événement", e);
+            throw new RuntimeException("Failed to publish event", e);
         }
     }
 }
