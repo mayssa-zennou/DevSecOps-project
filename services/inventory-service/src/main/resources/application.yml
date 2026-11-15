@@ -16,3 +16,17 @@ spring:
         properties:
             hibernate:
                 format_sql: true
+    kafka:
+        bootstrap-servers: localhost:9092
+        producer:
+          key-serializer: org.apache.kafka.common.serialization.StringSerializer
+          value-serializer: org.apache.kafka.common.serialization.StringSerializer
+        properties:
+          security.protocol: SASL_PLAINTEXT
+          sasl.mechanism: SCRAM-SHA-512
+          sasl.jaas.config: >-
+            org.apache.kafka.common.security.scram.ScramLoginModule required
+            username="stock-service" password="${KAFKA_STOCK_PASSWORD}";
+          ssl.truststore.location: ${KAFKA_TRUSTSTORE_PATH}
+          ssl.truststore.type: PKCS12
+          ssl.truststore.password: ${KAFKA_SSL_PASSWORD}
