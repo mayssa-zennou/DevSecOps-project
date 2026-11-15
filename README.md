@@ -10,36 +10,84 @@ Java 25, Spring Boot 4.1.2, Maven (wrapper included), PostgreSQL 16 (Order, Inve
 
 ## Quick start
 
-**Prerequisite:** Docker with Compose. No local Java needed to run the stack.
+**Prerequisites**
 
-```bash
+- Docker Desktop (running) with Compose
+- A JDK 17+ in the `PATH` (provides `keytool`, used to generate the TLS certificates)
+- PowerShell 5.1+ (Windows) to run the initialisation scripts
+
+**1. Clone and switch to the secured branch**
+
+```powershell
 git clone https://github.com/mayssa-zennou/DevSecOps-project.git
 cd DevSecOps-project
+git checkout feature/kafka-security
+```
 
+**2. Create the `.env` file**
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Fill in every `CHANGEME` with your own long random values (no spaces, quotes or special characters).
+`CLUSTER_ID` can be generated with:
+
+```powershell
+docker run --rm apache/kafka:3.9.0 /opt/kafka/bin/kafka-storage.sh random-uuid
+```
+
+`.env` and `secrets/` are ignored by Git: never commit them.
+
+**3. Generate the TLS certificates** (local CA, broker keystore, clients truststore)
+
+Run the certificate script of the project. It creates `secrets/ca/` and `secrets/kafka/`.
+Each developer generates their own CA: certificates are not shared.
+
+**4. Start the stack**
+
+```powershell
 docker compose up -d --build
-docker compose ps        # check that everything is up and databases are "healthy"
+docker compose ps
 ```
 
-The first build downloads Java and the Maven dependencies, so it takes a few minutes. The API Gateway is included in this stack and is available on port 8080.
+At the first start, Kafka only knows the `admin` account (created at storage format time).
 
-Stop everything:
+**5. Initialise Kafka (accounts, topics, ACLs)**
 
-```bash
-docker compose down        
+```powershell
+.\scripts\init-kafka.ps1
 ```
 
-Useful:
+If PowerShell blocks the script:
 
-```bash
-docker compose logs -f order-service       # follow the logs of one service
-docker compose up -d --build order-service # rebuild and restart one service
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\init-kafka.ps1
 ```
 
-Get the unsecured baseline:
+The script checks the prerequisites, waits for Kafka, then creates:
 
-```bash
-git checkout v0-unsecured
+- the SCRAM accounts `order-service`, `inventory-service`, `notification-service`
+- the topics `order.created`, `stock.reserved`, `stock.rejected`, `order.confirmed`, `order.rejected`
+- the ACLs (least privilege): each service can only produce/consume the topics it needs
+
+It can be run again safely. Services that started before the accounts existed may need a restart:
+
+```powershell
+docker compose restart order-service inventory-service notification-service
 ```
+
+**6. Check**
+
+```powershell
+docker compose ps
+curl.exe -i -X POST http://localhost:8080/orders -H "Content-Type: application/json" -d "{\"productId\":\"SKU-42\",\"quantity\":3}"
+```
+
+The order goes from `PENDING` to `CONFIRMED`, and the email appears in Mailpit (http://localhost:8025).
+
+> `docker compose down -v` deletes the Kafka volume (accounts, topics, ACLs) and the databases:
+> run `init-kafka.ps1` again afterwards.
 
 ## Services and ports
 
