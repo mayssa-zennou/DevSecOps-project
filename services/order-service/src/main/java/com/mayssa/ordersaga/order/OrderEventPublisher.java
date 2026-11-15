@@ -1,30 +1,31 @@
 package com.mayssa.ordersaga.order;
 
-import tools.jackson.databind.ObjectMapper;
+import java.util.concurrent.TimeUnit;
+
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
-import com.mayssa.ordersaga.order.events.OrderCreatedEvent;
+import tools.jackson.databind.ObjectMapper;
 
 @Component
 public class OrderEventPublisher {
 
-    private static final String TOPIC = "order.created";
-
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper mapper;
-
+    
     public OrderEventPublisher(KafkaTemplate<String, String> kafkaTemplate, ObjectMapper mapper) {
         this.kafkaTemplate = kafkaTemplate;
         this.mapper = mapper;
     }
 
-    public void publishOrderCreated(OrderCreatedEvent event) {
+    public void publish(String topic, String orderId, Object event) throws Exception {
         try {
-            String json = mapper.writeValueAsString(event);
-            kafkaTemplate.send(TOPIC, event.eventId(), json);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to publish event", e);
+            kafkaTemplate.send(topic, orderId, mapper.writeValueAsString(event)).get(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw e;
         }
+
     }
+
 }

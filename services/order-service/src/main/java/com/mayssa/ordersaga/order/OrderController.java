@@ -45,16 +45,17 @@ public class OrderController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public OrderResponse placeOrder(@Valid @RequestBody CreateOrderRequest request) {
+    public OrderResponse placeOrder(@Valid @RequestBody CreateOrderRequest request) throws Exception {
         Order order = repository.save(new Order(request.productId(), request.quantity()));
-        publisher.publishOrderCreated(new OrderCreatedEvent(
+        OrderCreatedEvent event = new OrderCreatedEvent(
                 UUID.randomUUID().toString(),
                 order.getId().toString(),
                 order.getUserId(),
                 order.getUserEmail(),
                 order.getProductId(), 
                 order.getQuantity(),
-                Instant.now()));
+                Instant.now());
+        publisher.publish("order.created", event.orderId(), event);
         return OrderResponse.from(order);
     }
 
