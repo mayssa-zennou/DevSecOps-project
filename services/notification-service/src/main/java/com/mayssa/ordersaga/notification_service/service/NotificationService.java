@@ -1,8 +1,8 @@
 package com.mayssa.ordersaga.notification_service.service;
 
 import com.mayssa.ordersaga.notification_service.entities.Notification;
-import com.mayssa.ordersaga.notification_service.event.OrderCreatedEvent;
-import com.mayssa.ordersaga.notification_service.event.StockLowEvent;
+import com.mayssa.ordersaga.notification_service.events.OrderConfirmedEvent;
+import com.mayssa.ordersaga.notification_service.events.OrderRejectedEvent;
 import com.mayssa.ordersaga.notification_service.repository.NotificationRepository;
 import lombok.AllArgsConstructor;
 import org.slf4j.Logger;
@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @AllArgsConstructor
@@ -18,28 +19,40 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final JavaMailSender mailSender;
 
-    public void handleOrderCreated(OrderCreatedEvent event){
+    @Transactional
+    public void handleOrderConfirmed(OrderConfirmedEvent event){
         if(notificationRepository.existsByEventId(event.eventId())){
-            log.info("Événement {} déjà traité, ignoré", event.eventId());
+            log.info("Event {} is already treated and will be ignored", event.eventId());
             return;
         }
-        String message="Votre commande #" + event.orderId() + " est confirmée";
-        sendEmail(event.userEmail(),"Commande confirmé",message);
-        save(event.eventId(),event.userId(),"ORDER_CREATED",message);
-        log.info("Notification ORDER_CREATED envoyée à {}", event.userEmail());
+        String message="Your order #" + event.orderId() + " is confirmed";
+        save(event.eventId(),event.userId(),"ORDER_CONFIRMED",message);
+        sendEmail(event.userEmail(),"Order Confirmed",message);
+        log.info("Notification ORDER_CONFIRMED sent to {}", event.userEmail());
     }
-
-    public void handleStockLow(StockLowEvent event){
+    
+    @Transactional
+    public void handleOrderRejected(OrderRejectedEvent event){
         if (notificationRepository.existsByEventId(event.eventId())){
-            log.info("Événement {} déjà traité, ignoré", event.eventId());
+            log.info("Event {} is already treated and will be ignored", event.eventId());
             return;
         }
-        String message="Stock bas : " + event.productName() + " (reste " + event.remaining() + ")";
-        save(event.eventId(),"admin","STOCK_LOW",message);
-        log.info("Notification STOCK_LOW enregistrée");
+        String message = "Your order #" + event.orderId() + " is rejected: " + describe(event.reason());
+        save(event.eventId(), event.userId(), "ORDER_REJECTED", message);
+        sendEmail(event.userEmail(), "Order rejected", message);
+        log.info("Notification ORDER_REJECTED sent to {}", event.userEmail());
     }
 
-
+    private static String describe(String reason) {
+        if (reason == null) {
+            return "unknown reason";
+        }
+        return switch (reason) {
+            case "INSUFFICIENT_STOCK" -> "insufficient stock";
+            case "UNKNOWN_PRODUCT" -> "unknown product";
+            default -> "unknown reason";
+        };
+    }
 
     public void save(String eventId,String userId,String type,String message){
         Notification notification=new Notification();

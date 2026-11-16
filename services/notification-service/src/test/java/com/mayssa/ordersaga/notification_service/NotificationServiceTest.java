@@ -1,28 +1,37 @@
 package com.mayssa.ordersaga.notification_service;
 
-import com.mayssa.ordersaga.notification_service.entities.Notification;
-import com.mayssa.ordersaga.notification_service.event.OrderCreatedEvent;
-import com.mayssa.ordersaga.notification_service.event.StockLowEvent;
-import com.mayssa.ordersaga.notification_service.repository.NotificationRepository;
-import com.mayssa.ordersaga.notification_service.service.NotificationService;
-import lombok.AllArgsConstructor;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
-import static org.mockito.Mockito.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mail.MailSendException;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
+
+import com.mayssa.ordersaga.notification_service.entities.Notification;
+import com.mayssa.ordersaga.notification_service.events.OrderConfirmedEvent;
+import com.mayssa.ordersaga.notification_service.events.OrderRejectedEvent;
+import com.mayssa.ordersaga.notification_service.repository.NotificationRepository;
+import com.mayssa.ordersaga.notification_service.service.NotificationService;
 
 @ExtendWith(MockitoExtension.class)
-public class NotificationServiceTest {
+class NotificationServiceTest {
 
     @Mock
     private NotificationRepository notificationRepository;
@@ -32,64 +41,122 @@ public class NotificationServiceTest {
     @InjectMocks
     private NotificationService notificationService;
 
+    // ---------- order.confirmed ----------
+
     @Test
-    void orderCreated_doublon_nEnvoieRienEtNeSauvegardePas(){
-        //etape 1 :preparer le mock : quand te demande est ce que event1 exist repond par oui
-        when(notificationRepository.existsByEventId("event-1")).thenReturn(true);
+    void orderConfirmed_duplicate_savesNothingAndSendsNothing() {
+        when(notificationRepository.existsByEventId("evt-1")).thenReturn(true);
 
-        OrderCreatedEvent event=new OrderCreatedEvent("event-1", "5L", "alice", "alice@test.com", Instant.now());
-        //etape 2 agir : lancer la vrai service
-        notificationService.handleOrderCreated(event);
+        notificationService.handleOrderConfirmed(confirmed("evt-1"));
 
-        //etape 3 :verifier : en lit les deux cachier des faux puisqu'ils conservent le resultat
-        verify(notificationRepository,never()).save(any());
-        verify(mailSender,never()).send(any(SimpleMailMessage.class));
+        verify(notificationRepository, never()).save(any());
+        verify(mailSender, never()).send(any(SimpleMailMessage.class));
     }
 
-
     @Test
-    void orderCreated_nouveau_envoieEmailEtSauvefarde(){
-        when(notificationRepository.existsByEventId("event-2")).thenReturn(false);
-        OrderCreatedEvent event=new OrderCreatedEvent("event-2", "5L", "alice", "alice@test.com", Instant.now());
-        notificationService.handleOrderCreated(event);
+    void orderConfirmed_newEvent_savesNotificationAndSendsMail() {
+        when(notificationRepository.existsByEventId("evt-2")).thenReturn(false);
 
-        ArgumentCaptor<SimpleMailMessage> capture=ArgumentCaptor.forClass(SimpleMailMessage.class);
-        verify(mailSender).send(capture.capture());
-        SimpleMailMessage mail=capture.getValue();
-        assertThat(mail.getTo()).containsExactly("alice@test.com");
+        notificationService.handleOrderConfirmed(confirmed("evt-2"));
 
-        ArgumentCaptor<Notification> notifCapture=ArgumentCaptor.forClass(Notification.class);
-        verify(notificationRepository).save(notifCapture.capture());
-        Notification notification=notifCapture.getValue();
-        assertThat(notification.getEventId()).isEqualTo("event-2");
+        Notification notification = savedNotification();
+        assertThat(notification.getEventId()).isEqualTo("evt-2");
         assertThat(notification.getUserId()).isEqualTo("alice");
-        assertThat(notification.getType()).isEqualTo("ORDER_CREATED");
+        assertThat(notification.getType()).isEqualTo("ORDER_CONFIRMED");
+        assertThat(notification.getMessage()).contains("order-42").contains("confirmed");
 
+        SimpleMailMessage mail = sentMail();
+        assertThat(mail.getTo()).containsExactly("alice@test.com");
+        assertThat(mail.getSubject()).isEqualTo("Order Confirmed");
+        assertThat(mail.getText()).contains("order-42");
     }
 
     @Test
-    void stockLow_doublon_neSauvegardepas(){
-        when(notificationRepository.existsByEventId("evt-3")).thenReturn(true);
-        StockLowEvent stockEvent=new StockLowEvent("evt-3", "12L", "Clavier", "3", Instant.now());
-        notificationService.handleStockLow(stockEvent);
-        verify(notificationRepository,never()).save(any());
-    }
-
-    @Test
-    void stockLow_nouveau_sauvegarde(){
+    void orderConfirmed_persistsNotificationBeforeSendingMail() {
         when(notificationRepository.existsByEventId("evt-3")).thenReturn(false);
-        StockLowEvent stockEvent=new StockLowEvent("evt-3", "12L", "Clavier", "3", Instant.now());
-        notificationService.handleStockLow(stockEvent);
 
-        ArgumentCaptor<Notification> capture=ArgumentCaptor.forClass(Notification.class);
+        notificationService.handleOrderConfirmed(confirmed("evt-3"));
 
-        verify(notificationRepository).save(capture.capture());
-        Notification notif=capture.getValue();
-        assertThat(notif.getEventId()).isEqualTo("evt-3");
-        assertThat(notif.getType()).isEqualTo("STOCK_LOW");
-
+        InOrder order = inOrder(notificationRepository, mailSender);
+        order.verify(notificationRepository).save(any(Notification.class));
+        order.verify(mailSender).send(any(SimpleMailMessage.class));
     }
 
+    @Test
+    void orderConfirmed_mailFailure_propagatesSoTheTransactionRollsBack() {
+        when(notificationRepository.existsByEventId("evt-4")).thenReturn(false);
+        doThrow(new MailSendException("smtp down")).when(mailSender).send(any(SimpleMailMessage.class));
 
+        assertThatThrownBy(() -> notificationService.handleOrderConfirmed(confirmed("evt-4")))
+                .isInstanceOf(MailSendException.class);
+    }
 
+    // ---------- order.rejected ----------
+
+    @Test
+    void orderRejected_duplicate_savesNothingAndSendsNothing() {
+        when(notificationRepository.existsByEventId("evt-5")).thenReturn(true);
+
+        notificationService.handleOrderRejected(rejected("evt-5", "INSUFFICIENT_STOCK"));
+
+        verify(notificationRepository, never()).save(any());
+        verify(mailSender, never()).send(any(SimpleMailMessage.class));
+    }
+
+    @ParameterizedTest
+    @CsvSource(nullValues = "NULL", value = {
+            "INSUFFICIENT_STOCK, insufficient stock",
+            "UNKNOWN_PRODUCT, unknown product",
+            "SOMETHING_ELSE, unknown reason",
+            "NULL, unknown reason"
+    })
+    void orderRejected_newEvent_explainsTheReason(String reason, String expectedText) {
+        when(notificationRepository.existsByEventId("evt-6")).thenReturn(false);
+
+        notificationService.handleOrderRejected(rejected("evt-6", reason));
+
+        Notification notification = savedNotification();
+        assertThat(notification.getEventId()).isEqualTo("evt-6");
+        assertThat(notification.getUserId()).isEqualTo("alice");
+        assertThat(notification.getType()).isEqualTo("ORDER_REJECTED");
+        assertThat(notification.getMessage()).contains("order-42").contains(expectedText);
+
+        SimpleMailMessage mail = sentMail();
+        assertThat(mail.getTo()).containsExactly("alice@test.com");
+        assertThat(mail.getSubject()).isEqualTo("Order rejected");
+        assertThat(mail.getText()).contains(expectedText);
+    }
+
+    @Test
+    void orderRejected_persistsNotificationBeforeSendingMail() {
+        when(notificationRepository.existsByEventId("evt-7")).thenReturn(false);
+
+        notificationService.handleOrderRejected(rejected("evt-7", "UNKNOWN_PRODUCT"));
+
+        InOrder order = inOrder(notificationRepository, mailSender);
+        order.verify(notificationRepository).save(any(Notification.class));
+        order.verify(mailSender).send(any(SimpleMailMessage.class));
+    }
+
+    // ---------- helpers ----------
+
+    private static OrderConfirmedEvent confirmed(String eventId) {
+        return new OrderConfirmedEvent(eventId, "order-42", "alice", "alice@test.com", Instant.now());
+    }
+
+    private static OrderRejectedEvent rejected(String eventId, String reason) {
+        return new OrderRejectedEvent(eventId, "order-42", "alice", "alice@test.com", reason, Instant.now());
+    }
+
+    private Notification savedNotification() {
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+        return captor.getValue();
+    }
+
+    private SimpleMailMessage sentMail() {
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        return captor.getValue();
+    }
 }
