@@ -2,7 +2,7 @@
 
 Order management with stock reservation and user notification, built as a set of Spring Boot microservices to practice the problems that distributed systems frequently raise: data consistency across services, partial failures, idempotency, as well as **DevSecOps** best practices: securing service-to-service communication (identity, mTLS, encrypted broker, network isolation) and proving it with reproducible attack scenarios.
 
-The business domain is deliberately simple (ordering products and reserving stock + user notifivation) so that the effort goes into engineering rather than business logic.
+The business domain is deliberately simple (ordering products and reserving stock + user notification) so that the effort goes into engineering rather than business logic.
 
 ## Tech stack
 
@@ -41,6 +41,46 @@ Get the unsecured baseline:
 git checkout v0-unsecured
 ```
 
+## Order saga
+
+Order processing is a choreographed saga across the order, inventory, and notification services: there is no central orchestrator, each service reacts to the events of the others and Kafka only transports them. Creating an order returns it as `PENDING`; the final state arrives asynchronously.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant O as Order Service
+    participant K as Kafka
+    participant I as Inventory Service
+    participant N as Notification Service
+
+    C->>O: POST /orders
+    O->>O: save order (PENDING)
+    O-->>K: order.created
+    O-->>C: 201 PENDING
+    K-->>I: order.created
+    I->>I: skip if eventId already processed
+    I->>I: atomic stock reservation
+    alt stock reserved
+        I-->>K: stock.reserved
+        K-->>O: stock.reserved
+        O->>O: PENDING → CONFIRMED
+        O-->>K: order.confirmed
+    else insufficient stock or unknown product
+        I-->>K: stock.rejected (reason)
+        K-->>O: stock.rejected
+        O->>O: PENDING → REJECTED (compensation)
+        O-->>K: order.rejected
+    end
+    K-->>N: order.confirmed / order.rejected
+    N->>N: store notification + send email
+```
+
+The order is created before the stock is known, so a failed reservation is compensated by moving it to `REJECTED` rather than deleting it. Nothing changes in inventory on a failed reservation, so no stock has to be released.
+
+Topics, event schemas, idempotency rules and naming conventions are documented in [`docs/contracts.md`](docs/contracts.md).
+
+**Known limitations:** events are published without a transactional outbox (a crash between the database write and the publication can leave an order `PENDING`), and there is no timeout on `PENDING` orders.
+
 ## Services and ports
 
 | Service | Port | Storage |
@@ -77,14 +117,12 @@ Body of a reservation: `{"quantity": 30}`. Demo data: `SKU-42` is seeded with 10
 
 ### Notification Service (`:8083`)
 
-The Kafka listeners handle messages from `order.created` and `stock.low`. For `order.created`, the service sends an email and saves an `ORDER_CREATED` notification. For `stock.low`, it saves a `STOCK_LOW` notification for user `admin`; this handler does not send an email. The repository contains no publisher for `stock.low`, so another producer must publish that event. The service skips an event whose `eventId` is already stored, and the database enforces uniqueness for that field.
-
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/notifications` | Return all stored notifications |
 | `GET` | `/notifications/user/{userId}` | Return notifications for the specified user |
 
-The order service currently publishes provisional user data (`alice`, `alice@test.com`), which is the recipient used by the notification email handler. Mailpit's web interface is available at `http://localhost:8025` when the Compose stack is running.
+The order service currently publishes provisional user data (`alice`, `alice@test.com`), which is used as the notification recipient. Mailpit's web interface is available at `http://localhost:8025` when the Compose stack is running.
 
 ### API Gateway (`:8080`)
 
