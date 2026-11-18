@@ -1,5 +1,5 @@
 server:
-    port: 8081
+  port: 8081
 
 spring:
     application:
@@ -22,3 +22,17 @@ spring:
             auto-offset-reset: earliest
             key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
             value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+        bootstrap-servers: localhost:9092
+        producer:
+            key-serializer: org.apache.kafka.common.serialization.StringSerializer
+            value-serializer: org.apache.kafka.common.serialization.StringSerializer
+        properties:
+            security.protocol: SASL_SSL
+            sasl.mechanism: SCRAM-SHA-512
+            sasl.jaas.config: >-
+              org.apache.kafka.common.security.scram.ScramLoginModule required
+              username="order-service" password="${KAFKA_ORDER_PASSWORD}";
+            ssl.truststore.location: ${KAFKA_TRUSTSTORE_PATH}
+            ssl.truststore.type: PKCS12
+            ssl.truststore.password: ${KAFKA_SSL_PASSWORD}
