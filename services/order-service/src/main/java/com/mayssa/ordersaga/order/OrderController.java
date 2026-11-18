@@ -16,6 +16,7 @@ import jakarta.validation.constraints.NotBlank;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -45,7 +46,8 @@ public class OrderController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public OrderResponse placeOrder(@Valid @RequestBody CreateOrderRequest request) throws Exception {
+    @Transactional(rollbackFor = Exception.class)
+    public OrderResponse placeOrder(@Valid @RequestBody CreateOrderRequest request) {
         Order order = repository.save(new Order(request.productId(), request.quantity()));
         OrderCreatedEvent event = new OrderCreatedEvent(
                 UUID.randomUUID().toString(),

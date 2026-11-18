@@ -42,9 +42,11 @@ will come from the JWT in Phase 1.
 
 ## 3. Processing rules
 
-- **At-least-once delivery.** Kafka may deliver an event more than once
-  (consumer restart, offset reset, replayed publication), so every consumer is
-  idempotent. The mechanism depends on what the service produces:
+- **At-least-once delivery**: order-service and inventory-service write their
+  events to an `outbox` table in the same transaction as the business change;
+  a relay then publishes them (message key = `orderId`). An event may be
+  published more than once but is never lost.
+- **Consumer idempotence**, one mechanism per service:
 
   | Service              | Idempotency mechanism                                                                  |
   |----------------------|----------------------------------------------------------------------------------------|
@@ -78,6 +80,11 @@ Notes:
   `stock:reserve` at runtime.
 - `GET /notifications/user/{userId}` is allowed only when `userId` equals the
   token `sub`, unless the caller is admin.
+- `POST /stock/{productId}/reservations` is still exposed, but the saga no
+longer uses it (Order and Inventory communicate only through Kafka). The
+`stock:reserve` scope and the Order → Inventory client credentials
+only make sense if Order keeps a synchronous call to Inventory; otherwise the
+security of that link moves to the Kafka ACLs.
 
 ## 5. Identities and certificates
 

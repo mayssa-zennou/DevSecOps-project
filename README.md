@@ -54,21 +54,21 @@ sequenceDiagram
     participant N as Notification Service
 
     C->>O: POST /orders
-    O->>O: save order (PENDING)
-    O-->>K: order.created
+    O->>O: save order (PENDING) + outbox row (same transaction)
     O-->>C: 201 PENDING
+    O-->>K: order.created (outbox relay)
     K-->>I: order.created
     I->>I: skip if eventId already processed
-    I->>I: atomic stock reservation
+    I->>I: atomic stock reservation + outbox row (same transaction)
     alt stock reserved
         I-->>K: stock.reserved
         K-->>O: stock.reserved
-        O->>O: PENDING → CONFIRMED
+        O->>O: PENDING → CONFIRMED + outbox row
         O-->>K: order.confirmed
     else insufficient stock or unknown product
         I-->>K: stock.rejected (reason)
         K-->>O: stock.rejected
-        O->>O: PENDING → REJECTED (compensation)
+        O->>O: PENDING → REJECTED (compensation) + outbox row
         O-->>K: order.rejected
     end
     K-->>N: order.confirmed / order.rejected
@@ -77,9 +77,11 @@ sequenceDiagram
 
 The order is created before the stock is known, so a failed reservation is compensated by moving it to `REJECTED` rather than deleting it. Nothing changes in inventory on a failed reservation, so no stock has to be released.
 
+**Message reliability.** Order and Inventory never publish to Kafka from their business logic: each event is written to an `outbox` table in the same transaction as the state change, and a relay publishes it afterwards. Delivery is therefore at-least-once: an event is never lost when the broker is down, but it may be published twice. Consumers are idempotent: Inventory records processed `eventId`s, Order only transitions orders that are still `PENDING`, and Notification relies on a unique `event_id`.
+
 Topics, event schemas, idempotency rules and naming conventions are documented in [`docs/contracts.md`](docs/contracts.md).
 
-**Known limitations:** events are published without a transactional outbox (a crash between the database write and the publication can leave an order `PENDING`), and there is no timeout on `PENDING` orders.
+**Known limitations:** there is no timeout on `PENDING` orders and no dead-letter topic, so an order whose result never arrives stays `PENDING`; published outbox rows are never purged; the polling relay (500 ms) adds some latency that a CDC tool such as Debezium would remove; sending an email is not transactional, so a duplicate email is possible if the commit fails after the send.
 
 ## Services and ports
 
