@@ -76,6 +76,8 @@ services:
     depends_on:
       inventory-db:
         condition: service_healthy
+      kafka:
+        condition: service_started
 
   notification-service:
     build: ./services/notification-service
@@ -102,8 +104,8 @@ services:
   api-gateway:
     build: ./services/api-gateway
     ports:
-      - "8080:8080"   # seul port public
-    networks: [frontend]
+      - "127.0.0.1:8080:8080"   # seul port public
+    networks: [edge, frontend]
     environment:
       ORDER_SERVICE_URL: http://order-service:8081
       INVENTORY_SERVICE_URL: http://inventory-service:8082
@@ -145,14 +147,16 @@ services:
     image: axllent/mailpit
     container_name: mailpit
     ports:
-      - "8025:8025"   # interface web : vous lisez les emails ici
-    networks: [frontend, backend]
+      - "127.0.0.1:8025:8025"  # interface web : vous lisez les emails ici
+    networks: [edge, backend]
 
 volumes:
   kafka-data:
 
 networks:
+  edge:
   frontend:   # Gateway <-> services applicatifs(la gateway ne peut pas acceder direcetement a la BD ou kafka)
+    internal: true
   backend:    # services <-> bases, Kafka
     internal: true  #les services n'ont plus d'acces a internet
 

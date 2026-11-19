@@ -1,8 +1,8 @@
 # scripts/init-kafka.ps1  (à lancer depuis la racine, Kafka déjà démarré)
 
 # ---- group-id réels : à vérifier avec Select-String ... "group-id|groupId" ----
-$GroupOrder        = "order-group"
-$GroupInventory    = "inventory-group"
+$GroupOrder        = "order-service"
+$GroupInventory    = "inventory-service"
 $GroupNotification = "notification-group"
 # ------------------------------------------------------------------------------
 
@@ -15,7 +15,7 @@ $e = @{}
 Get-Content .env | ForEach-Object {
   if ($_ -match '^\s*([^#=\s]+)\s*=(.*)$') { $e[$matches[1]] = $matches[2].Trim() }
 }
-foreach ($n in "KAFKA_ADMIN_PASSWORD","KAFKA_SSL_PASSWORD","ORDER_KAFKA_PASSWORD","KAFKA_NOTIFICATION_PASSWORD","KAFKA_STOCK_PASSWORD") {
+foreach ($n in "KAFKA_ADMIN_PASSWORD","KAFKA_SSL_PASSWORD","KAFKA_ORDER_PASSWORD","KAFKA_NOTIFICATION_PASSWORD","KAFKA_STOCK_PASSWORD") {
   if (-not $e[$n]) { Fail "variable $n absente de .env" }
 }
 
@@ -25,6 +25,7 @@ $B = @("--bootstrap-server","localhost:9092","--command-config","/tmp/admin.prop
 # ---- Connexion admin (fichier écrit dans le conteneur uniquement) ----
 Step "Connexion admin"
 $cfg = @"
+# Kafka admin client
 security.protocol=SASL_SSL
 sasl.mechanism=SCRAM-SHA-512
 sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="admin" password="$($e["KAFKA_ADMIN_PASSWORD"])";
@@ -51,7 +52,7 @@ function NewUser($name, $pw) {
     --entity-type users --entity-name $name | Out-Null
   Write-Host "  $name"
 }
-NewUser "order-service"        $e["ORDER_KAFKA_PASSWORD"]
+NewUser "order-service"        $e["KAFKA_ORDER_PASSWORD"]
 NewUser "notification-service" $e["KAFKA_NOTIFICATION_PASSWORD"]
 NewUser "inventory-service"    $e["KAFKA_STOCK_PASSWORD"]
 

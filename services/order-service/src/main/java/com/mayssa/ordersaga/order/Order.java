@@ -25,6 +25,12 @@ public class Order {
     @Column(name = "product_id", nullable = false)
     private String productId;
 
+    @Column(name = "user_id", nullable = false, length = 64)
+    private String userId;
+
+    @Column(name = "user_email", nullable = false, length = 255)
+    private String userEmail;
+
     @Column(nullable = false)
     private int quantity;
 
@@ -38,6 +44,8 @@ public class Order {
     public Order(String productId, int quantity) {
         this.id = UUID.randomUUID();
         this.productId = productId;
+        this.userId = "alice";
+        this.userEmail = "alice@test.com";
         this.quantity = quantity;
         this.status = OrderStatus.PENDING;
         this.createdAt = Instant.now();

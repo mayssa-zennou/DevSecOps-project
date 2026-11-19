@@ -4,10 +4,10 @@ WORKDIR /app
 COPY pom.xml mvnw ./
 COPY .mvn .mvn
 RUN sed -i 's/\r$//' mvnw && chmod +x mvnw
-RUN ./mvnw -B dependency:go-offline
+RUN --mount=type=cache,target=/root/.m2 ./mvnw --batch-mode dependency:go-offline
 
 COPY src src
-RUN ./mvnw -B package -Dmaven.test.skip=true
+RUN --mount=type=cache,target=/root/.m2 ./mvnw --batch-mode package -Dmaven.test.skip=true
 
 
 FROM eclipse-temurin:25-jre

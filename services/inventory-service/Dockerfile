@@ -7,12 +7,15 @@ COPY mvnw pom.xml ./
 COPY .mvn .mvn
 # Windows checkouts may have CRLF line endings, which break the script on Linux
 RUN sed -i 's/\r$//' mvnw && chmod +x mvnw
-RUN ./mvnw --batch-mode dependency:go-offline
+# Keep Maven's local repository across builds. The layer itself is still keyed
+# by the wrapper/config files above, while this mount avoids re-downloading
+# artifacts if the RUN step needs to execute again.
+RUN --mount=type=cache,target=/root/.m2 ./mvnw --batch-mode dependency:go-offline
 
 # Then the sources. Tests are skipped here: they need Docker (Testcontainers),
 # which is not available inside a build. They run locally and in CI.
 COPY src src
-RUN ./mvnw --batch-mode package -Dmaven.test.skip=true
+RUN --mount=type=cache,target=/root/.m2 ./mvnw --batch-mode package -Dmaven.test.skip=true
 
 # ---- Stage 2: runtime image ----
 FROM eclipse-temurin:25-jre

@@ -2,7 +2,7 @@
 
 Order management with stock reservation and user notification, built as a set of Spring Boot microservices to practice the problems that distributed systems frequently raise: data consistency across services, partial failures, idempotency, as well as **DevSecOps** best practices: securing service-to-service communication (identity, mTLS, encrypted broker, network isolation) and proving it with reproducible attack scenarios.
 
-The business domain is deliberately simple (ordering products and reserving stock + user notifivation) so that the effort goes into engineering rather than business logic.
+The business domain is deliberately simple (ordering products and reserving stock + user notification) so that the effort goes into engineering rather than business logic.
 
 ## Tech stack
 
@@ -16,12 +16,11 @@ Java 25, Spring Boot 4.1.2, Maven (wrapper included), PostgreSQL 16 (Order, Inve
 - A JDK 17+ in the `PATH` (provides `keytool`, used to generate the TLS certificates)
 - PowerShell 5.1+ (Windows) to run the initialisation scripts
 
-**1. Clone and switch to the secured branch**
+**1. Clone the repository**
 
 ```powershell
 git clone https://github.com/mayssa-zennou/DevSecOps-project.git
 cd DevSecOps-project
-git checkout feature/kafka-security
 ```
 
 **2. Create the `.env` file**
@@ -41,17 +40,17 @@ docker run --rm apache/kafka:3.9.0 /opt/kafka/bin/kafka-storage.sh random-uuid
 
 **3. Generate the TLS certificates** (local CA, broker keystore, clients truststore)
 
-Run the certificate script of the project. It creates `secrets/ca/` and `secrets/kafka/`.
-Each developer generates their own CA: certificates are not shared.
+Run the certificate script of the project from Git Bash or WSL. It creates `secrets/ca/` and `secrets/kafka/`.
+The script reads `KAFKA_SSL_PASSWORD` from the shell environment (it does not load `.env`); export it before running, for example `export KAFKA_SSL_PASSWORD='your-alphanumeric-password'`.
+Each developer generates their own CA: certificates are not shared. To regenerate them, remove `secrets/` first because `keytool` will fail when the aliases already exist. The CA private key is stored in `secrets/ca/ca.p12`; `secrets/` is ignored by Git. The broker certificate is valid for 365 days.
 
-**4. Start the stack**
+**4. Start Kafka first**
 
 ```powershell
-docker compose up -d --build
-docker compose ps
+docker compose up -d kafka
 ```
 
-At the first start, Kafka only knows the `admin` account (created at storage format time).
+Kafka starts with only the `admin` account (created at storage format time). Wait until its container is running before initialising it.
 
 **5. Initialise Kafka (accounts, topics, ACLs)**
 
@@ -71,13 +70,22 @@ The script checks the prerequisites, waits for Kafka, then creates:
 - the topics `order.created`, `stock.reserved`, `stock.rejected`, `order.confirmed`, `order.rejected`
 - the ACLs (least privilege): each service can only produce/consume the topics it needs
 
-It can be run again safely. Services that started before the accounts existed may need a restart:
+**6. Start the remaining services** only after initialisation completes:
+
+```powershell
+docker compose up -d --build
+docker compose ps
+```
+
+This order prevents application clients from connecting before their SCRAM accounts and ACLs exist. The initialisation script can be run again safely after Kafka data is reset.
+
+If the services were already running during initialisation, restart them:
 
 ```powershell
 docker compose restart order-service inventory-service notification-service
 ```
 
-**6. Check**
+**7. Check**
 
 ```powershell
 docker compose ps
@@ -88,6 +96,48 @@ The order goes from `PENDING` to `CONFIRMED`, and the email appears in Mailpit (
 
 > `docker compose down -v` deletes the Kafka volume (accounts, topics, ACLs) and the databases:
 > run `init-kafka.ps1` again afterwards.
+
+## Order saga
+
+Order processing is a choreographed saga across the order, inventory, and notification services: there is no central orchestrator, each service reacts to the events of the others and Kafka only transports them. Creating an order returns it as `PENDING`; the final state arrives asynchronously.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant O as Order Service
+    participant K as Kafka
+    participant I as Inventory Service
+    participant N as Notification Service
+
+    C->>O: POST /orders
+    O->>O: save order (PENDING) + outbox row (same transaction)
+    O-->>C: 201 PENDING
+    O-->>K: order.created (outbox relay)
+    K-->>I: order.created
+    I->>I: skip if eventId already processed
+    I->>I: atomic stock reservation + outbox row (same transaction)
+    alt stock reserved
+        I-->>K: stock.reserved
+        K-->>O: stock.reserved
+        O->>O: PENDING → CONFIRMED + outbox row
+        O-->>K: order.confirmed
+    else insufficient stock or unknown product
+        I-->>K: stock.rejected (reason)
+        K-->>O: stock.rejected
+        O->>O: PENDING → REJECTED (compensation) + outbox row
+        O-->>K: order.rejected
+    end
+    K-->>N: order.confirmed / order.rejected
+    N->>N: store notification + send email
+```
+
+The order is created before the stock is known, so a failed reservation is compensated by moving it to `REJECTED` rather than deleting it. Nothing changes in inventory on a failed reservation, so no stock has to be released.
+
+**Message reliability.** Order and Inventory never publish to Kafka from their business logic: each event is written to an `outbox` table in the same transaction as the state change, and a relay publishes it afterwards. Delivery is therefore at-least-once: an event is never lost when the broker is down, but it may be published twice. Consumers are idempotent: Inventory records processed `eventId`s, Order only transitions orders that are still `PENDING`, and Notification relies on a unique `event_id`.
+
+Topics, event schemas, idempotency rules and naming conventions are documented in [`docs/contracts.md`](docs/contracts.md).
+
+**Known limitations:** there is no timeout on `PENDING` orders and no dead-letter topic, so an order whose result never arrives stays `PENDING`; published outbox rows are never purged; the polling relay (500 ms) adds some latency that a CDC tool such as Debezium would remove; sending an email is not transactional, so a duplicate email is possible if the commit fails after the send.
 
 ## Services and ports
 
@@ -125,14 +175,12 @@ Body of a reservation: `{"quantity": 30}`. Demo data: `SKU-42` is seeded with 10
 
 ### Notification Service (`:8083`)
 
-The Kafka listeners handle messages from `order.created` and `stock.low`. For `order.created`, the service sends an email and saves an `ORDER_CREATED` notification. For `stock.low`, it saves a `STOCK_LOW` notification for user `admin`; this handler does not send an email. The repository contains no publisher for `stock.low`, so another producer must publish that event. The service skips an event whose `eventId` is already stored, and the database enforces uniqueness for that field.
-
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/notifications` | Return all stored notifications |
 | `GET` | `/notifications/user/{userId}` | Return notifications for the specified user |
 
-The order service currently publishes provisional user data (`alice`, `alice@test.com`), which is the recipient used by the notification email handler. Mailpit's web interface is available at `http://localhost:8025` when the Compose stack is running.
+The order service currently publishes provisional user data (`alice`, `alice@test.com`), which is used as the notification recipient. Mailpit's web interface is available at `http://localhost:8025` when the Compose stack is running.
 
 ### API Gateway (`:8080`)
 
