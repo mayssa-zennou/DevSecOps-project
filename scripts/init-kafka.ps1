@@ -25,6 +25,7 @@ $B = @("--bootstrap-server","localhost:9092","--command-config","/tmp/admin.prop
 # ---- Connexion admin (fichier écrit dans le conteneur uniquement) ----
 Step "Connexion admin"
 $cfg = @"
+# Kafka admin client
 security.protocol=SASL_SSL
 sasl.mechanism=SCRAM-SHA-512
 sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="admin" password="$($e["KAFKA_ADMIN_PASSWORD"])";

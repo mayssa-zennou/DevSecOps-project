@@ -1,9 +1,12 @@
 #!/bin/sh
 set -e
-: "${TLS_PASSWORD:?TLS_PASSWORD manquant}"
+: "${TLS_PASSWORD:=${KAFKA_SSL_PASSWORD:-}}"
+: "${TLS_PASSWORD:?TLS_PASSWORD manquant (ou KAFKA_SSL_PASSWORD)}"
 
-CA=/out/ca
-BR=/out/kafka
+# Resolve paths from this script so it works from the repository root or scripts/.
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+CA="$ROOT/secrets/ca"
+BR="$ROOT/secrets/kafka"
 SAN="dns:localhost,dns:kafka,ip:127.0.0.1"
 mkdir -p "$CA" "$BR"
 

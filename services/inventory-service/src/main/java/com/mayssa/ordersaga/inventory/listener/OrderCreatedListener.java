@@ -36,7 +36,7 @@ public class OrderCreatedListener {
         this.mapper = mapper;
     }
 
-    @KafkaListener(topics = "order.created", groupId = "inventory-service")
+    @KafkaListener(topics = "order.created")
     @Transactional
     public void onOrderCreated(String payload) {
         OrderCreatedEvent event = mapper.readValue(payload, OrderCreatedEvent.class);

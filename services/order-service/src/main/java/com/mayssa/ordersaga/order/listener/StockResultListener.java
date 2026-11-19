@@ -36,7 +36,7 @@ public class StockResultListener {
         this.publisher = publisher;
     }
     
-    @KafkaListener(topics = "stock.reserved", groupId = "order-service")
+    @KafkaListener(topics = "stock.reserved")
     @Transactional(rollbackFor = Exception.class)    
     public void onStockReserved(String payload) throws Exception {
         StockReservedEvent event = mapper.readValue(payload, StockReservedEvent.class);
@@ -50,7 +50,7 @@ public class StockResultListener {
                         order.getUserId(), order.getUserEmail(), Instant.now()));    
     }
 
-    @KafkaListener(topics = "stock.rejected", groupId = "order-service")
+    @KafkaListener(topics = "stock.rejected")
     @Transactional(rollbackFor = Exception.class)
     public void onStockRejected(String payload) throws Exception {
         StockRejectedEvent event = mapper.readValue(payload, StockRejectedEvent.class);

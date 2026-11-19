@@ -40,17 +40,17 @@ docker run --rm apache/kafka:3.9.0 /opt/kafka/bin/kafka-storage.sh random-uuid
 
 **3. Generate the TLS certificates** (local CA, broker keystore, clients truststore)
 
-Run the certificate script of the project. It creates `secrets/ca/` and `secrets/kafka/`.
-Each developer generates their own CA: certificates are not shared.
+Run the certificate script of the project from Git Bash or WSL. It creates `secrets/ca/` and `secrets/kafka/`.
+The script reads `KAFKA_SSL_PASSWORD` from the shell environment (it does not load `.env`); export it before running, for example `export KAFKA_SSL_PASSWORD='your-alphanumeric-password'`.
+Each developer generates their own CA: certificates are not shared. To regenerate them, remove `secrets/` first because `keytool` will fail when the aliases already exist. The CA private key is stored in `secrets/ca/ca.p12`; `secrets/` is ignored by Git. The broker certificate is valid for 365 days.
 
-**4. Start the stack**
+**4. Start Kafka first**
 
 ```powershell
-docker compose up -d --build
-docker compose ps
+docker compose up -d kafka
 ```
 
-At the first start, Kafka only knows the `admin` account (created at storage format time).
+Kafka starts with only the `admin` account (created at storage format time). Wait until its container is running before initialising it.
 
 **5. Initialise Kafka (accounts, topics, ACLs)**
 
@@ -70,13 +70,22 @@ The script checks the prerequisites, waits for Kafka, then creates:
 - the topics `order.created`, `stock.reserved`, `stock.rejected`, `order.confirmed`, `order.rejected`
 - the ACLs (least privilege): each service can only produce/consume the topics it needs
 
-It can be run again safely. Services that started before the accounts existed may need a restart:
+**6. Start the remaining services** only after initialisation completes:
+
+```powershell
+docker compose up -d --build
+docker compose ps
+```
+
+This order prevents application clients from connecting before their SCRAM accounts and ACLs exist. The initialisation script can be run again safely after Kafka data is reset.
+
+If the services were already running during initialisation, restart them:
 
 ```powershell
 docker compose restart order-service inventory-service notification-service
 ```
 
-**6. Check**
+**7. Check**
 
 ```powershell
 docker compose ps
