@@ -97,6 +97,40 @@ The order goes from `PENDING` to `CONFIRMED`, and the email appears in Mailpit (
 > `docker compose down -v` deletes the Kafka volume (accounts, topics, ACLs) and the databases:
 > run `init-kafka.ps1` again afterwards.
 
+## Attack scenarios
+
+`scripts/attacks/run-attacks.ps1` runs non-destructive security checks against the local stack
+(no POST requests, no Kafka events, no stock changes). `-Mode before` expects every attack
+to succeed (vulnerable baseline), `-Mode after` expects every attack to be blocked.
+
+### Run on the unsecured baseline (tag `v0.1-unsecured-saga`)
+
+The tag predates the script, so copy it out before switching versions:
+
+```powershell
+git show HEAD:scripts/attacks/run-attacks.ps1 | Set-Content $env:TEMP\run-attacks.ps1 -Encoding utf8
+docker compose down -v
+git switch --detach v0.1-unsecured-saga
+docker compose up --build -d
+# wait until the services are up, then:
+& $env:TEMP\run-attacks.ps1 -Mode before *>&1 | Tee-Object evidence\before\attacks-before.txt
+docker compose down -v
+git switch -
+```
+
+Recorded results: [evidence/before/attacks-before.txt](evidence/before/attacks-before.txt).
+
+### Run on the secured version
+
+Return to the secured branch (`git switch -` in the procedure above), then follow steps 4 to 6 of the
+[Quick start](#quick-start): start Kafka, run `init-kafka.ps1`, then start the remaining services.
+`secrets/` and `.env` survive `docker compose down -v`, so step 3 (certificates) is not needed again.
+Once the stack is up, run:
+
+```powershell
+.\scripts\attacks\run-attacks.ps1 -Mode after
+```
+
 ## Order saga
 
 Order processing is a choreographed saga across the order, inventory, and notification services: there is no central orchestrator, each service reacts to the events of the others and Kafka only transports them. Creating an order returns it as `PENDING`; the final state arrives asynchronously.
