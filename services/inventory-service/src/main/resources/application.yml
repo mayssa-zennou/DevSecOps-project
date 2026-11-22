@@ -4,6 +4,12 @@ server:
 spring:
     application:
         name: inventory-service
+    security:
+        oauth2:
+            resourceserver:
+                jwt:
+                    issuer-uri: ${KEYCLOAK_ISSUER:http://keycloak:8080/realms/shop}
+                    jwk-set-uri: ${KEYCLOAK_JWKS:http://keycloak:8080/realms/shop/protocol/openid-connect/certs}
     datasource:
         url: jdbc:postgresql://localhost:5433/inventory
         username: mayssa
