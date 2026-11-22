@@ -1,16 +1,19 @@
 package com.mayssa.ordersaga.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.hamcrest.Matchers.hasItem;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 
 import java.util.UUID;
 
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -23,10 +26,17 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import com.jayway.jsonpath.JsonPath;
 
-@SpringBootTest 
+@SpringBootTest(properties = {
+        "spring.kafka.listener.auto-startup=false",
+        "outbox.relay.enabled=false"
+})
 @AutoConfigureMockMvc 
 @Testcontainers 
 class OrderApiIntegrationTest {
+
+    private static final String ALICE = "11111111-1111-1111-1111-111111111111";
+    private static final String BOB = "22222222-2222-2222-2222-222222222222";
+    private static final String EMAIL = "alice@test.com";
     
     @Container 
     @ServiceConnection 
@@ -38,12 +48,19 @@ class OrderApiIntegrationTest {
     @Autowired 
     OrderRepository repository;
 
+    @BeforeEach
+    void cleanOrders() {
+        repository.deleteAll();
+    }
+
     // arrange / act / assert tests
     @Test
     void placeOrder_returns201_andPersistsPendingOrder() throws Exception {
         
         // request
         MvcResult result = mvc.perform(post("/orders")
+        .with(jwt().jwt(token -> token.subject(ALICE).claim("email", EMAIL))
+                .authorities(new SimpleGrantedAuthority("SCOPE_order:write")))
         .contentType(MediaType.APPLICATION_JSON)
         .content("""
             {"productId": "SKU-42", "quantity": 3}
@@ -71,6 +88,8 @@ class OrderApiIntegrationTest {
         long before = repository.count();
 
         mvc.perform(post("/orders")
+                        .with(jwt().jwt(token -> token.subject(ALICE).claim("email", EMAIL))
+                                .authorities(new SimpleGrantedAuthority("SCOPE_order:write")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"productId": "SKU-42", "quantity": 0}
@@ -85,6 +104,8 @@ class OrderApiIntegrationTest {
         long before = repository.count();
         
         mvc.perform(post("/orders")
+                        .with(jwt().jwt(token -> token.subject(ALICE).claim("email", EMAIL))
+                                .authorities(new SimpleGrantedAuthority("SCOPE_order:write")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"productId": "", "quantity": 1}
@@ -96,33 +117,62 @@ class OrderApiIntegrationTest {
     
     @Test 
     void getOrder_returnsExistingOrder() throws Exception {
-        Order saved = repository.save(new Order("SKU-7", 2));
+        Order saved = repository.save(new Order("SKU-7", 2, ALICE, EMAIL));
 
-        mvc.perform(get("/orders/" + saved.getId()))
+        mvc.perform(get("/orders/" + saved.getId()).with(readToken(ALICE)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(saved.getId().toString()))
                 .andExpect(jsonPath("$.productId").value("SKU-7"))
                 .andExpect(jsonPath("$.quantity").value(2));
     }
 
+    @Test
+    void getOrder_ownedByAnotherCustomer_returns404() throws Exception {
+        Order saved = repository.save(new Order("SKU-private", 1, ALICE, EMAIL));
+
+        mvc.perform(get("/orders/" + saved.getId()).with(readToken(BOB)))
+                .andExpect(status().isNotFound());
+    }
+
     @Test 
     void getOrder_withUnknownId_returns404() throws Exception {
-        mvc.perform(get("/orders/" + UUID.randomUUID()))
+        mvc.perform(get("/orders/" + UUID.randomUUID()).with(readToken(ALICE)))
                 .andExpect(status().isNotFound());
     }
 
     @Test
     void getOrder_withMalformedId_returns400() throws Exception {
-        mvc.perform(get("/orders/Invalid_UUID_0"))
+        mvc.perform(get("/orders/Invalid_UUID_0").with(readToken(ALICE)))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
     void listOrders_includesSavedOrders() throws Exception {
-        Order saved = repository.save(new Order("SKU-9", 1));
+        Order saved = repository.save(new Order("SKU-9", 1, ALICE, EMAIL));
+        repository.save(new Order("SKU-private", 2, BOB, "bob@test.com"));
 
-        mvc.perform(get("/orders"))
+        mvc.perform(get("/orders").with(readToken(ALICE)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[*].id").value(hasItem(saved.getId().toString())));
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].id").value(saved.getId().toString()));
+    }
+
+    @Test
+    void placeOrder_withoutEmailClaim_returns403() throws Exception {
+        long before = repository.count();
+
+        mvc.perform(post("/orders")
+                        .with(jwt().jwt(token -> token.subject(ALICE))
+                                .authorities(new SimpleGrantedAuthority("SCOPE_order:write")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"productId\":\"SKU-42\",\"quantity\":1}"))
+                .andExpect(status().isForbidden());
+
+        assertThat(repository.count()).isEqualTo(before);
+    }
+
+    private static org.springframework.test.web.servlet.request.RequestPostProcessor readToken(String subject) {
+        return jwt().jwt(token -> token.subject(subject))
+                .authorities(new SimpleGrantedAuthority("SCOPE_order:read"));
     }
 }

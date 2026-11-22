@@ -41,11 +41,11 @@ public class Order {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    public Order(String productId, int quantity) {
+    public Order(String productId, int quantity, String userId, String userEmail) {
         this.id = UUID.randomUUID();
         this.productId = productId;
-        this.userId = "alice";
-        this.userEmail = "alice@test.com";
+        this.userId = userId;
+        this.userEmail = userEmail;
         this.quantity = quantity;
         this.status = OrderStatus.PENDING;
         this.createdAt = Instant.now();

@@ -3,6 +3,7 @@ package com.mayssa.ordersaga.inventory;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -20,13 +21,18 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@SpringBootTest(properties = "spring.datasource.hikari.maximum-pool-size=50")
+@SpringBootTest(properties = {
+        "spring.datasource.hikari.maximum-pool-size=50",
+        "spring.kafka.listener.auto-startup=false",
+        "outbox.relay.enabled=false"
+})
 @AutoConfigureMockMvc
 @Testcontainers
 class InventoryIntegrationTest {
@@ -48,7 +54,8 @@ class InventoryIntegrationTest {
     void getStock_returnsAvailableQuantity() throws Exception {
         repository.save(new Stock("SKU-A", 10));
 
-        mvc.perform(get("/stock/SKU-A"))
+        mvc.perform(get("/stock/SKU-A").with(jwt()
+                        .authorities(new SimpleGrantedAuthority("SCOPE_stock:read"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.productId").value("SKU-A"))
                 .andExpect(jsonPath("$.available").value(10));
@@ -56,7 +63,8 @@ class InventoryIntegrationTest {
 
     @Test
     void getStock_unknownProduct_returns404() throws Exception {
-        mvc.perform(get("/stock/Unknown"))
+        mvc.perform(get("/stock/Unknown").with(jwt()
+                        .authorities(new SimpleGrantedAuthority("SCOPE_stock:read"))))
                 .andExpect(status().isNotFound());
     }
 
@@ -148,6 +156,9 @@ class InventoryIntegrationTest {
 
     private ResultActions reserve(String productId, int quantity) throws Exception {
         return mvc.perform(post("/stock/" + productId + "/reservations")
+                .with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_admin"),
+                        new SimpleGrantedAuthority("SCOPE_stock:reserve")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"quantity\": " + quantity + "}"));
     }

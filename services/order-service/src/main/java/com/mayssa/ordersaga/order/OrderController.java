@@ -16,6 +16,11 @@ import jakarta.validation.constraints.NotBlank;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -47,8 +52,12 @@ public class OrderController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Transactional(rollbackFor = Exception.class)
-    public OrderResponse placeOrder(@Valid @RequestBody CreateOrderRequest request) {
-        Order order = repository.save(new Order(request.productId(), request.quantity()));
+    public OrderResponse placeOrder(@Valid @RequestBody CreateOrderRequest request, @AuthenticationPrincipal Jwt jwt) {
+        String email = jwt.getClaimAsString("email");
+        if (email == null || email.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access token must include an email claim");
+        }
+        Order order = repository.save(new Order(request.productId(), request.quantity(), jwt.getSubject(), email));
         OrderCreatedEvent event = new OrderCreatedEvent(
                 UUID.randomUUID().toString(),
                 order.getId().toString(),
@@ -62,17 +71,20 @@ public class OrderController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<OrderResponse> getOrder(@PathVariable UUID id) {
-        return repository.findById(id)
+    public ResponseEntity<OrderResponse> getOrder(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt, Authentication auth) {
+        return (isAdmin(auth) ? repository.findById(id) : repository.findByIdAndUserId(id, jwt.getSubject()))
             .map(order -> ResponseEntity.ok(OrderResponse.from(order)))
-            .orElse(ResponseEntity.notFound().build());
+            .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @GetMapping
-    public List<OrderResponse> listOrders() {
-        return repository.findAll().stream()
+    public List<OrderResponse> listOrders(@AuthenticationPrincipal Jwt jwt, Authentication auth) {
+        return (isAdmin(auth) ? repository.findAll() : repository.findByUserId(jwt.getSubject())).stream()
             .map(OrderResponse::from)
             .toList();
     }
 
+    private boolean isAdmin(Authentication auth) {
+        return auth.getAuthorities().contains(new SimpleGrantedAuthority("ROLE_admin"));
+    }
 }
