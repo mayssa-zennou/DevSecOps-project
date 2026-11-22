@@ -26,7 +26,11 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@SpringBootTest(properties = "spring.datasource.hikari.maximum-pool-size=50")
+@SpringBootTest(properties = {
+        "spring.datasource.hikari.maximum-pool-size=50",
+        "spring.kafka.listener.auto-startup=false",
+        "outbox.relay.enabled=false"
+})
 @AutoConfigureMockMvc
 @Testcontainers
 class InventoryIntegrationTest {

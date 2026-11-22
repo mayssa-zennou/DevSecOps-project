@@ -23,7 +23,10 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import com.jayway.jsonpath.JsonPath;
 
-@SpringBootTest 
+@SpringBootTest(properties = {
+        "spring.kafka.listener.auto-startup=false",
+        "outbox.relay.enabled=false"
+})
 @AutoConfigureMockMvc 
 @Testcontainers 
 class OrderApiIntegrationTest {
