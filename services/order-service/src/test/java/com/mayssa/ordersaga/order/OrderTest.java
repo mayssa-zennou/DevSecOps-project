@@ -6,35 +6,40 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.Test;
 
 class OrderTest {
+
+    private static final String USER_ID = "11111111-1111-1111-1111-111111111111";
+    private static final String USER_EMAIL = "alice@test.com";
     
     @Test
     void newOrder_startsPending_withGeneratedIdAndTimestamp() {
-        Order order = new Order("P-42", 2);
+        Order order = new Order("P-42", 2, USER_ID, USER_EMAIL);
 
         assertThat(order.getId()).isNotNull();
         assertThat(order.getProductId()).isEqualTo("P-42");
         assertThat(order.getQuantity()).isEqualTo(2);
+        assertThat(order.getUserId()).isEqualTo(USER_ID);
+        assertThat(order.getUserEmail()).isEqualTo(USER_EMAIL);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(order.getCreatedAt()).isNotNull();
     }
 
     @Test
     void confirm_movesPendingOrderToConfirmed() {
-        Order order = new Order("P-42", 2);
+        Order order = new Order("P-42", 2, USER_ID, USER_EMAIL);
         order.confirm();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
     }
 
     @Test
     void reject_movesPendingOrderToRejected() {
-        Order order = new Order("P-42", 2);
+        Order order = new Order("P-42", 2, USER_ID, USER_EMAIL);
         order.reject();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
     }
 
     @Test 
     void confirmedOrder_cannotBeRejected() {
-        Order order = new Order("P-42", 2);
+        Order order = new Order("P-42", 2, USER_ID, USER_EMAIL);
         order.confirm();
         assertThatThrownBy(order::reject)
             .isInstanceOf(IllegalStateException.class)
@@ -45,7 +50,7 @@ class OrderTest {
 
     @Test 
     void rejectedOrder_cannotBeConfirmed() {
-        Order order = new Order("P-42", 2);
+        Order order = new Order("P-42", 2, USER_ID, USER_EMAIL);
         order.reject();
         assertThatThrownBy(order::confirm)
             .isInstanceOf(IllegalStateException.class)
