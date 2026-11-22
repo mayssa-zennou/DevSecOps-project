@@ -52,6 +52,8 @@ services:
       KAFKA_SSL_PASSWORD: ${KAFKA_SSL_PASSWORD}
       KAFKA_TRUSTSTORE_PATH: /etc/kafka/secrets/client.truststore.p12
       KAFKA_ORDER_PASSWORD: ${KAFKA_ORDER_PASSWORD}
+      KEYCLOAK_ISSUER: http://keycloak:8080/realms/shop
+      KEYCLOAK_JWKS: http://keycloak:8080/realms/shop/protocol/openid-connect/certs
     volumes:
       - ./secrets/kafka/client.truststore.p12:/etc/kafka/secrets/client.truststore.p12:ro
     depends_on:
@@ -71,6 +73,8 @@ services:
       KAFKA_SSL_PASSWORD: ${KAFKA_SSL_PASSWORD}
       KAFKA_TRUSTSTORE_PATH: /etc/kafka/secrets/client.truststore.p12
       KAFKA_STOCK_PASSWORD: ${KAFKA_STOCK_PASSWORD}
+      KEYCLOAK_ISSUER: http://keycloak:8080/realms/shop
+      KEYCLOAK_JWKS: http://keycloak:8080/realms/shop/protocol/openid-connect/certs
     volumes:
       - ./secrets/kafka/client.truststore.p12:/etc/kafka/secrets/client.truststore.p12:ro
     depends_on:
@@ -91,6 +95,8 @@ services:
       KAFKA_TRUSTSTORE_PATH: /etc/kafka/secrets/client.truststore.p12
       KAFKA_NOTIFICATION_PASSWORD: ${KAFKA_NOTIFICATION_PASSWORD}
       SPRING_MAIL_HOST: mailpit
+      KEYCLOAK_ISSUER: http://keycloak:8080/realms/shop
+      KEYCLOAK_JWKS: http://keycloak:8080/realms/shop/protocol/openid-connect/certs
     volumes:
       - ./secrets/kafka/client.truststore.p12:/etc/kafka/secrets/client.truststore.p12:ro
     depends_on:
@@ -110,6 +116,8 @@ services:
       ORDER_SERVICE_URL: http://order-service:8081
       INVENTORY_SERVICE_URL: http://inventory-service:8082
       NOTIFICATION_SERVICE_URL: http://notification-service:8083
+      KEYCLOAK_ISSUER: http://keycloak:8080/realms/shop
+      KEYCLOAK_JWKS: http://keycloak:8080/realms/shop/protocol/openid-connect/certs      
     depends_on:
       inventory-service:
         condition: service_started
@@ -149,6 +157,20 @@ services:
     ports:
       - "127.0.0.1:8025:8025"  # interface web : vous lisez les emails ici
     networks: [edge, backend]
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_HOSTNAME: http://keycloak:8080
+      KC_HTTP_ENABLED: "true" # not necessary in dev mode, but kept for clarity
+    volumes:
+      - ./keycloak/realm-shop.json:/opt/keycloak/data/import/realm-shop.json:ro
+    ports:
+      - "127.0.0.1:8180:8080"
+    networks: [edge, frontend]
 
 volumes:
   kafka-data:
